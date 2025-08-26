@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI or Not? — 3-Level Challenge</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header glass">
+      <h1>AI or Not?</h1>
+      <p class="sub">Pick the AI-generated image each round. Ace all three to win.</p>
+    </header>
+
+    <section id="game" class="game glass" hidden>
+      <div id="level-info" class="level-info">
+        <span id="level-counter"></span>
+        <span id="score-counter" class="score"></span>
+      </div>
+
+      <h2 id="level-prompt" class="prompt"></h2>
+
+      <div id="options" class="options" role="list" aria-label="Image options"></div>
+
+      <section id="status" class="status" role="status" aria-live="polite"></section>
+
+      <div class="controls" style="display: flex; justify-content: flex-end;">
+        <button id="next-btn" class="btn" disabled>Next level →</button>
+        <button id="restart-btn" class="btn btn-secondary" hidden>Restart</button>
+      </div>
+    </section>
+
+    <section id="loader" class="loader">Loading…</section>
+  </main>
+
+ <script>
+    const RECENT_KEY = 'ai_or_not_recent_level_ids_v3';
+
+    const state = {
+      pool: [],
+      playlist: [],
+      gameSize: 3,
+      optionsPerLevel: 2,
+      recentMax: 12,
+      currentIndex: 0,
+      score: 0,
+      locked: false,
+    };
+
+    function $(sel){ return document.querySelector(sel); }
+    function setStatus(msg){ const el=$("#status"); el.textContent = msg || ""; }
+    function formatLevelCounter(i, total){ return `Level ${i+1} of ${total}`; }
+
+    function shuffle(arr){
+      const a = [...arr];
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function sample(arr, k){
+      return shuffle(arr).slice(0, Math.min(k, arr.length));
+    }
+
+    function loadRecent(){
+      try{ return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); }catch(e){ return []; }
+    }
+    function saveRecent(ids){
+      try{ localStorage.setItem(RECENT_KEY, JSON.stringify(ids)); }catch(e){}
+    }
+
+    function sampleWithoutRecent(pool, k, recent){
+      const fresh = pool.filter(l => !recent.includes(l.id));
+      const source = (fresh.length >= k) ? fresh : pool;
+      return sample(source, k);
+    }
+
+    async function init(){
+      try{
+        const res = await fetch('/game-data', { cache: 'no-store' });
+        const data = await res.json();
+        state.pool = Array.isArray(data.levels) ? data.levels : [];
+        state.gameSize = Number.isInteger(data.game_size) ? data.game_size : 3;
+        state.optionsPerLevel = Number.isInteger(data.options_per_level) ? data.options_per_level : 2;
+        state.recentMax = Number.isInteger(data.recent_buffer) ? data.recent_buffer : Math.max(12, state.gameSize * 3);
+
+        const recent = loadRecent();
+        state.playlist = sampleWithoutRecent(state.pool, state.gameSize, recent);
+
+        const newRecent = [...state.playlist.map(l => l.id), ...recent]
+          .filter((v,i,arr) => arr.indexOf(v) === i)
+          .slice(0, state.recentMax);
+        saveRecent(newRecent);
+
+        $("#loader").hidden = true;
+        $("#game").hidden = false;
+        state.currentIndex = 0;
+        state.score = 0;
+        renderLevel();
+        setStatus("Game loaded. Good luck!");
+      }catch(e){
+        setStatus("Failed to load game data. Check the console and your JSON.");
+        console.error(e);
+      }
+    }
+
+    function pickTwoOptions(level){
+      const all = Array.isArray(level.options) ? level.options : [];
+      if (all.length < 2) return all;
+
+      const ai = all.filter(o => o && o.is_ai === true);
+      const real = all.filter(o => o && !o.is_ai);
+
+      if (ai.length && real.length){
+        const aiPick = sample(ai, 1)[0];
+        const realPick = sample(real, 1)[0];
+        return shuffle([aiPick, realPick]);
+      }
+      return sample(all, 2);
+    }
+
+    function renderLevel(){
+      const total = state.playlist.length;
+      if (state.currentIndex >= total){
+        return renderEnd();
+      }
+      state.locked = false;
+      const level = state.playlist[state.currentIndex];
+      $("#level-counter").textContent = formatLevelCounter(state.currentIndex, total);
+      $("#score-counter").textContent = `Score: ${state.score}/${total}`;
+      $("#level-prompt").textContent = level.prompt || "Pick the AI-generated image";
+
+      const optionsEl = $("#options");
+      optionsEl.innerHTML = "";
+
+      let chosen = pickTwoOptions(level);
+
+      if (chosen.length < 2){
+        setStatus("This level needs at least one AI and one real image. Check your JSON.");
+        $("#next-btn").disabled = false;
+        return;
+      }
+
+      chosen.forEach((opt, idx) => {
+        const button = document.createElement("button");
+        button.className = "option";
+        button.setAttribute("role", "listitem");
+        button.setAttribute("aria-pressed", "false");
+        button.dataset.isAi = String(!!opt.is_ai);
+
+        const picture = document.createElement("img");
+        picture.src = opt.src;
+        picture.alt = opt.alt || `Option ${idx+1}`;
+
+        const label = document.createElement("div");
+        label.className = "option-label";
+        label.textContent = opt.label || `Option ${idx+1}`;
+
+        button.appendChild(picture);
+        button.appendChild(label);
+
+        button.addEventListener("click", () => onPick(button));
+        button.addEventListener("keydown", (e) => {
+          if ((e.key === "Enter" || e.key === " ") && !state.locked) {
+            e.preventDefault();
+            onPick(button);
+          }
+        });
+
+        optionsEl.appendChild(button);
+      });
+
+      $("#next-btn").disabled = true;
+      $("#next-btn").onclick = () => {
+        state.currentIndex += 1;
+        renderLevel();
+        setStatus("");
+      };
+    }
+
+    function onPick(button){
+      if (state.locked) return;
+      state.locked = true;
+      button.setAttribute("aria-pressed", "true");
+
+      const selectedIsAi = (button.dataset.isAi === "true");
+      const allButtons = Array.from(document.querySelectorAll("#options .option"));
+
+      allButtons.forEach(b => {
+        const isAi = (b.dataset.isAi === "true");
+        b.classList.add(isAi ? "correct" : "incorrect");
+        b.disabled = true;
+      });
+
+      if (selectedIsAi) {
+        state.score += 1;
+        setStatus("Correct! That one was AI.");
+      } else {
+        setStatus("Not quite. The green-outlined one was AI.");
+      }
+
+      $("#score-counter").textContent = `Score: ${state.score}/${state.playlist.length}`;
+      $("#next-btn").disabled = false;
+    }
+
+    function renderEnd(){
+      const total = state.playlist.length;
+      const win = state.score === total;
+      $("#level-prompt").textContent = win
+        ? "You nailed it — perfect score! 🏆"
+        : "Game over — better luck next time!";
+
+      $("#options").innerHTML = "";
+      $("#level-counter").textContent = "Finished";
+      $("#score-counter").textContent = `Final Score: ${state.score}/${total}`;
+
+      $("#next-btn").disabled = true;
+      $("#next-btn").hidden = true;
+
+      $("#restart-btn").hidden = false;
+      $("#restart-btn").onclick = () => {
+        const recent = loadRecent();
+        state.playlist = sampleWithoutRecent(state.pool, state.gameSize, recent);
+        const newRecent = [...state.playlist.map(l => l.id), ...recent]
+          .filter((v,i,arr) => arr.indexOf(v) === i)
+          .slice(0, state.recentMax);
+        saveRecent(newRecent);
+
+        state.currentIndex = 0;
+        state.score = 0;
+        $("#next-btn").hidden = false;
+        $("#restart-btn").hidden = true;
+        renderLevel();
+        setStatus("Restarted. Fresh set!");
+      };
+    }
+
+    window.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>

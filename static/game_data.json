@@ -1,0 +1,35 @@
+{
+  "game_size": 3,
+  "levels": [
+    {
+      "id": 1,
+      "prompt": "Pick the AI-generated image.",
+      "options": [
+        { "src": "/static/images/cookies_2.jpg", "is_ai": false},
+        { "src": "/static/images/cookies_1.png", "is_ai": true  },
+        { "src": "/static/images/cookies_4.png", "is_ai": true },
+        { "src": "/static/images/cookies_3.jpg", "is_ai": false }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Pick the AI-generated image.",
+      "options": [
+        { "src": "/static/images/puppy_2.jpg",   "is_ai": false  },
+        { "src": "/static/images/puppy_1.png",   "is_ai": true  },
+        { "src": "/static/images/puppy_4.jpg",  "is_ai": false },
+        { "src": "/static/images/puppy_3.jpg", "is_ai": true }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Pick the AI-generated image.",
+      "options": [
+        { "src": "/static/images/nature_2.jpg",   "is_ai": false  },
+        { "src": "/static/images/nature_1.png",   "is_ai": true  },
+        { "src": "/static/images/nature_4.png",  "is_ai": true },
+        { "src": "/static/images/nature_3.jpg", "is_ai": false }
+      ]
+    }
+  ]
+}
